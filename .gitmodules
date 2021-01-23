@@ -1,0 +1,6 @@
+[submodule "ext/ultimaille"]
+	path = ext/ultimaille
+	url = https://github.com/ssloy/ultimaille.git
+[submodule "ext/glfw"]
+	path = ext/glfw
+	url = https://github.com/glfw/glfw.git
