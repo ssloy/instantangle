@@ -1,7 +1,7 @@
 # instantangle
 2D mesh deformation interactive demo
 
-![](https://raw.githubusercontent.com/ssloy/instantangle/master/doc/demo.gif)
+![](https://raw.githubusercontent.com/ssloy/instantangle/main/doc/demo.gif)
 
 
 # Use CMake to build the project:
