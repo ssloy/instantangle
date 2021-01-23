@@ -1,5 +1,6 @@
-# instantangle
-2D mesh deformation interactive demo
+# 2D mesh deformation interactive demo
+
+**Warning: work in progress!**
 
 ![](https://raw.githubusercontent.com/ssloy/instantangle/main/doc/demo.gif)
 
