@@ -10,24 +10,25 @@ using namespace UM;
 int main(int argc, char** argv) {
     Triangles m;
     read_by_extension("../potichat.obj", m);
+    PointAttribute<int> resp(m.points);
+    for (int v : vert_iter(m))
+        resp[v] = -1;
 
     int nlock = m.nverts();
     int nbdtr = m.nfacets();
 
-    for (int l : range(3)) {
+    for (int l : range(2)) {
         SurfaceConnectivity fec(m);
-        PointAttribute<int> bid(m.points);
         int nbord = 0;
         for (int v : vert_iter(m)) {
-            bid[v] = -1;
             if (!fec.is_boundary_vert(v)) continue;
-            bid[v] = nbord++;
+            resp[v] = m.nverts() + nbord++;
         }
         int offv = m.points.create_points(nbord);
         for (int v : range(offv)) {
             if (!fec.is_boundary_vert(v)) continue;
-            bid[offv+bid[v]] = -1;
-            m.points[offv+bid[v]] = m.points[v];
+            resp[resp[v]] = -1;
+            m.points[resp[v]] = m.points[v];
         }
 
 
@@ -37,17 +38,17 @@ int main(int argc, char** argv) {
             vec3 e = fec.geom(c);
             vec3 n = {e.y, -e.x, 0};
             n = n*.01;
-            m.points[offv+bid[fec.from(c)]] = m.points[offv+bid[fec.from(c)]] + n;
-            m.points[offv+bid[fec.to(c)]]     = m.points[offv+bid[fec.to(c)]] + n;
+            m.points[resp[fec.from(c)]] = m.points[resp[fec.from(c)]] + n;
+            m.points[resp[fec.to(c)]]     = m.points[resp[fec.to(c)]] + n;
             int offf = m.create_facets(2);
 
             m.vert(offf+0, 0) = fec.to(c);
             m.vert(offf+0, 1) = fec.from(c);
-            m.vert(offf+0, 2) = offv+bid[fec.from(c)];
+            m.vert(offf+0, 2) = resp[fec.from(c)];
 
             m.vert(offf+1, 0) = fec.to(c);
-            m.vert(offf+1, 1) = offv+bid[fec.from(c)];
-            m.vert(offf+1, 2) = offv+bid[fec.to(c)];
+            m.vert(offf+1, 1) = resp[fec.from(c)];
+            m.vert(offf+1, 2) = resp[fec.to(c)];
         }
     }
 
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
     for (int t : facet_iter(m)) {
         blayer[t] = t>=nbdtr;
     }
-    write_geogram("blopt.geogram", m, { {}, {{"boundary_layer", blayer.ptr}}, {}  });
+    write_geogram("blopt.geogram", m, { {{"resp", resp.ptr}}, {{"boundary_layer", blayer.ptr}}, {}  });
 
     return 0;
 }

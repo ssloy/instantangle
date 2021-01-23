@@ -35,9 +35,6 @@ void get_bbox(const PointSet &pts, vec3 &min, vec3 &max) {
     }
 }
 
-
-
-
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode) {
     std::cerr << "key_callback(" << window << ", " << key << ", " << scancode << ", " << action << ", " << mode << ");" << std::endl;
     if (GLFW_RELEASE == action) {
@@ -193,53 +190,28 @@ int setup_window(GLFWwindow* &window, const GLuint width, const GLuint height) {
 int main(int argc, char** argv) {
     const double boxsize = 2.;
     const double shrink  = 1.3;
-    read_by_extension("../potichat.obj", mesh);
-    meshorig = mesh;
-    nvorig = meshorig.nverts();
-    int orignfacets= mesh.nfacets();
+    SurfaceAttributes attr = read_by_extension("../potichat-boundary-layer.geogram", mesh);
+    FacetAttribute<bool> tblayer("boundary_layer", attr, mesh);
+    PointAttribute<bool> vblayer(mesh.points);
 
+    int nintvrt = 0;
+    int ninttri = 0;
+    for (int t : facet_iter(mesh))
+        ninttri += !tblayer[t];
 
     SurfaceConnectivity fec(mesh);
-    PointAttribute<int> bid(mesh.points);
-    int nbord = 0;
     for (int v : vert_iter(mesh)) {
-        bid[v] = -1;
-        if (!fec.is_boundary_vert(v)) continue;
-        bid[v] = nbord++;
+        vblayer[v] = true;
+        int c = fec.v2c[v];
+        do {
+            if (!tblayer[fec.c2f[c]]) {
+                vblayer[v] = false;
+                nintvrt++;
+                break;
+            }
+            c = fec.next_around_vertex(c);
+        } while (c!=fec.v2c[v]);
     }
-    int offv = mesh.points.create_points(nbord);
-    for (int v : range(offv)) {
-        if (!fec.is_boundary_vert(v)) continue;
-        bid[offv+bid[v]] = -1;
-        mesh.points[offv+bid[v]] = mesh.points[v];
-    }
-
-
-    for (int c : corner_iter(mesh)) {
-        int opp = fec.opposite(c);
-        if (opp>=0) continue;
-        vec3 e = fec.geom(c);
-        vec3 n = {e.y, -e.x, 0};
-        n = n*.2;
-        mesh.points[offv+bid[fec.from(c)]] = mesh.points[offv+bid[fec.from(c)]] + n;
-        mesh.points[offv+bid[fec.to(c)]]     = mesh.points[offv+bid[fec.to(c)]] + n;
-        int offf = mesh.create_facets(2);
-
-        mesh.vert(offf+0, 0) = fec.to(c);
-        mesh.vert(offf+0, 1) = fec.from(c);
-        mesh.vert(offf+0, 2) = offv+bid[fec.from(c)];
-
-        mesh.vert(offf+1, 0) = fec.to(c);
-        mesh.vert(offf+1, 1) = offv+bid[fec.from(c)];
-        mesh.vert(offf+1, 2) = offv+bid[fec.to(c)];
-
-    }
-    write_geogram("bl.geogram", mesh, {{ {"bid", bid.ptr}}, {}, {}  });
-
-    meshbrd = mesh;
-    nvbrd = meshbrd.nverts();
-
-orignfacets= mesh.nfacets();
 
     vec3 bbmin, bbmax;
     get_bbox(mesh.points, bbmin, bbmax);
@@ -256,29 +228,68 @@ orignfacets= mesh.nfacets();
     }
 
     GLuint prog_hdlr = set_shaders("../src/vertex.glsl", "../src/fragment.glsl");
-    std::vector<GLuint> indices(3*orignfacets, 0);
-    std::vector<GLfloat> vertices(3*mesh.nverts(), 0);
-    std::vector<GLfloat> colors(3*mesh.nverts(), 1);
+    std::vector<GLuint> indices(3*ninttri, 0);
+    std::vector<GLfloat> vertices(3*nintvrt, 0);
+    std::vector<GLfloat> colors(3*nintvrt, 1);
     double angle = 1;
 
-    for (int i=0; i<orignfacets; i++) {
-        for (int j=0; j<3; j++)
-            indices[i*3+j] = mesh.vert(i, j);
+    {
+        int cnt = 0;
+        for (int t : facet_iter(mesh)) {
+            if (tblayer[t]) continue;
+            for (int j : range(3))
+                indices[cnt*3+j] = mesh.vert(t, j);
+            cnt++;
+        }
     }
 
-    for (int i=0; i<mesh.nverts(); i++) {
-        for (int k=0; k<3; k++) vertices[i*3 + k] = mesh.points[i][k];
-        //      if (0==rand()%10) {
-        //          colors[i*3+0] = 1.;
-        //          colors[i*3+1] = 0.;
-        //          colors[i*3+2] = 0.;
-        //      } else {
-        //          colors[i*3+0] = colors[i*3+1] = colors[i*3+2] = 1.;
-        //      }
+
+    {
+        int cnt = 0;
+        for (int v : vert_iter(mesh)) {
+            if (vblayer[v]) continue;
+            for (int k : range(3))
+                vertices[cnt*3 + k] = mesh.points[v][k];
+            //      if (0==rand()%10) {
+            //          colors[i*3+0] = 1.;
+            //          colors[i*3+1] = 0.;
+            //          colors[i*3+2] = 0.;
+            //      } else {
+            //          colors[i*3+0] = colors[i*3+1] = colors[i*3+2] = 1.;
+            //      }
+            cnt++;
+        }
     }
 
+//  opt->no_two_coverings();
+
+
+    {
+        for (int v : vert_iter(mesh)) {
+            if (!vblayer[v] || fec.is_boundary_vert(v)) continue;
+            //              if (rand()%20!=0) continue;
+            std::vector<int> ring;
+            {
+                int cir = fec.v2c[v];
+                do {
+                    ring.push_back(fec.to(cir));
+                    cir = fec.next_around_vertex(cir);
+                } while (cir != fec.v2c[v]);
+            }
+
+            int off = mesh.create_facets(ring.size()-2);
+
+            int v0 = ring[0];
+            for (int lv=1; lv+1<ring.size(); lv++) {
+                mesh.vert(off+lv-1, 0) = v0;
+                mesh.vert(off+lv-1, 1) = ring[lv];
+                mesh.vert(off+lv-1, 2) = ring[lv+1];
+            }
+        }
+    }
 
     opt = new Untangle2D(mesh);
+
     opt->lock[30] = true;
     opt->lock[900] = true;
 
@@ -319,6 +330,8 @@ orignfacets= mesh.nfacets();
     glDepthFunc(GL_GREATER); // accept fragment if it is closer to the camera than the former one
     glUseProgram(prog_hdlr); // specify the shaders to use
 
+
+
     auto start = std::chrono::steady_clock::now();
     while (!glfwWindowShouldClose(window)) {
         { // 20ms sleep to reach 50 fps, do something useful instead of sleeping
@@ -334,30 +347,37 @@ orignfacets= mesh.nfacets();
         float *ptr = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
         if (ptr) {
             // wobble vertex in and out along normal
+            int cnt = 0;
             for (int i=0; i<mesh.nverts(); i++) {
+                            if (vblayer[i]) continue;
+
                 for (int d=0; d<2; d++) {
-                    ptr[i*3+d] = opt->X[i*2+d];
+                    ptr[cnt*3+d] = opt->X[i*2+d];
                 }
+                cnt++;
             }
 
             //          updateVertices(ptr, srcVertices, teapotNormals, vertexCount, (float)timer.getElapsedTime());
             glUnmapBuffer(GL_ARRAY_BUFFER);     // release pointer to mapping buffer
         }
 
-opt->go();
+        opt->go();
 
         glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
         float *ptr2 = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
         if(ptr2) {
 
+            int cnt = 0;
             for (int i=0; i<mesh.nverts(); i++) {
+                            if (vblayer[i]) continue;
                 if (opt->lock[i]) {
-                    ptr2[i*3+0] = 1.;
-                    ptr2[i*3+1] = 0.;
-                    ptr2[i*3+2] = 0.;
+                    ptr2[cnt*3+0] = 1.;
+                    ptr2[cnt*3+1] = 0.;
+                    ptr2[cnt*3+2] = 0.;
                 } else {
-                    ptr2[i*3+0] = ptr2[i*3+1] = ptr2[i*3+2] = 1.;
+                    ptr2[cnt*3+0] = ptr2[cnt*3+1] = ptr2[cnt*3+2] = 1.;
                 }
+                cnt++;
             }
             glUnmapBuffer(GL_ARRAY_BUFFER);     // release pointer to mapping buffer
         }

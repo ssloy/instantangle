@@ -79,7 +79,10 @@ struct Untangle2D {
             for (int d : range(2))
                 X[2*v+d] = m.points[v][d];
 
-        { // prepare the reference geometery
+        rebuild_reference_geometry();
+    }
+    
+    void rebuild_reference_geometry() {
             for (int t : facet_iter(m)) {
                 vec3 pi = m.points[m.vert(t, 0)];
                 vec3 pj = m.points[m.vert(t, 1)];
@@ -95,7 +98,6 @@ struct Untangle2D {
 //              else
                 ref_tri[t] = mat<3,2>{{ {(pk-pj).y, -(pk-pj).x}, {(pi-pk).y, -(pi-pk).x}, {(pj-pi).y, -(pj-pi).x} }}/(-2.*area);
             }
-        }
     }
 
     void no_two_coverings() {
@@ -121,6 +123,8 @@ struct Untangle2D {
                 m.vert(off+lv-1, 2) = ring[lv+1];
             }
         }
+        rebuild_reference_geometry();
+
         //          write_geogram("tri.geogram", m);
     }
 
@@ -213,7 +217,7 @@ struct Untangle2D {
         compute_hessian_pattern();
         evaluate_jacobian();
 
-        double e0 = 1e-6;
+        double e0 = 1e-3;
         for (int iter=0; iter<maxiter; iter++) {
             if (debug>0) std::cerr << "iteration #" << iter << std::endl;
             double det_prev = detmin;
@@ -280,7 +284,7 @@ if (detmin<0) {
                 if  (detmin>0 && std::abs(E_prev - E)/E<1e-7) break;
         }
 
-        if (detmin<0) {
+        if (0 && detmin<0) {
             for (int f : facet_iter(m)) {
                 if (det[f]>0) continue;
                 for (int i : range(3)) {
@@ -418,7 +422,7 @@ if (detmin<0) {
     // optimization input parameters
     Triangles &m;           // the mesh to optimize
     double theta = 1./4.;   // the energy is (1-theta)*(shape energy) + theta*(area energy)
-    int maxiter = 5;    // max number of outer iterations
+    int maxiter = 3;    // max number of outer iterations
     double bfgs_threshold = 1e-1;
     int bfgs_maxiter = 50; // max number of inner iterations
     int nlmaxiter = 15000;
