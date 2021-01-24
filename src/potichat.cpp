@@ -205,6 +205,31 @@ int setup_window(GLFWwindow* &window, const GLuint width, const GLuint height) {
     return 0;
 }
 
+void heat_map_color(float value, float &red, float &green, float &blue) {
+    const int NUM_COLORS = 4;
+    static float color[NUM_COLORS][3] = { {.3,.3,1}, {.3,1,.3}, {1,1,.3}, {1,.3,.3} };
+    // A static array of 4 colors:  (blue,   green,  yellow,  red) using {r,g,b} for each.
+
+    int idx1;        // |-- Our desired color will be between these two indexes in "color".
+    int idx2;        // |
+    float fractBetween = 0;  // Fraction between "idx1" and "idx2" where our value is.
+
+    if (value <= 0)      {  idx1 = idx2 = 0;            }    // accounts for an input <=0
+    else if (value >= 1) {  idx1 = idx2 = NUM_COLORS-1; }    // accounts for an input >=0
+    else {
+        value = value * (NUM_COLORS-1);        // Will multiply value by 3.
+        idx1  = floor(value);                  // Our desired color will be after this index.
+        idx2  = idx1+1;                        // ... and before this index (inclusive).
+        fractBetween = value - float(idx1);    // Distance between the two indexes (0-1).
+    }
+
+    red   = (color[idx2][0] - color[idx1][0])*fractBetween + color[idx1][0];
+    green = (color[idx2][1] - color[idx1][1])*fractBetween + color[idx1][1];
+    blue  = (color[idx2][2] - color[idx1][2])*fractBetween + color[idx1][2];
+}
+
+
+
 int main(int argc, char** argv) {
     const double boxsize = 2.;
     const double shrink  = 1.3;
@@ -273,35 +298,15 @@ int main(int argc, char** argv) {
     }
 
     GLuint prog_hdlr = set_shaders("../src/vertex.glsl", "../src/fragment.glsl");
-    std::vector<GLuint> indices(3*ninttri, 0);
-    std::vector<GLfloat> vertices(3*nintvrt, 0);
-    std::vector<GLfloat> colors(3*nintvrt, 1);
+    std::vector<GLfloat> vertices(3*3*ninttri, 0); // TODO get rid of these, it is ridiculous to have arrays that are not used
+    std::vector<GLfloat>   colors(4*3*ninttri, 1);
 
+    std::vector<int> tri2draw(ninttri, 0);
     {
         int cnt = 0;
         for (int t : facet_iter(mesh)) {
             if (tblayer[t]) continue;
-            for (int j : range(3))
-                indices[cnt*3+j] = mesh.vert(t, j);
-            cnt++;
-        }
-    }
-
-
-    {
-        int cnt = 0;
-        for (int v : vert_iter(mesh)) {
-            if (vblayer[v]) continue;
-            for (int k : range(3))
-                vertices[cnt*3 + k] = mesh.points[v][k];
-            //      if (0==rand()%10) {
-            //          colors[i*3+0] = 1.;
-            //          colors[i*3+1] = 0.;
-            //          colors[i*3+2] = 0.;
-            //      } else {
-            //          colors[i*3+0] = colors[i*3+1] = colors[i*3+2] = 1.;
-            //      }
-            cnt++;
+            tri2draw[cnt++] = t;
         }
     }
 
@@ -336,7 +341,7 @@ int main(int argc, char** argv) {
     opt = new Untangle2D(mesh);
   opt->no_two_coverings();
 
-if (1) {
+if (0) {
     int off = mesh.create_facets(dectri.size()/3);
     for (int t : range(dectri.size()/3)) {
         for (int i : range(3)) {
@@ -384,89 +389,114 @@ if (1) {
     glGenBuffers(1, &colorbuffer);
     glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
     glBufferData(GL_ARRAY_BUFFER, colors.size()*sizeof(GLfloat), colors.data(), GL_STREAM_DRAW);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-
-    GLuint elementbuffer = 0;
-    glGenBuffers(1, &elementbuffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-
-    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 
     glViewport(0, 0, width, height);
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glEnable(GL_DEPTH_TEST);
+    glClearColor(0.1f, 0.2f, 0.2f, 1.0f);
+    glDisable(GL_DEPTH_TEST);
     glClearDepth(0);
     glDepthFunc(GL_GREATER); // accept fragment if it is closer to the camera than the former one
     glUseProgram(prog_hdlr); // specify the shaders to use
 
 
 
-    auto start = std::chrono::steady_clock::now();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+//  auto start = std::chrono::steady_clock::now();
     while (!glfwWindowShouldClose(window)) {
-        { // 20ms sleep to reach 50 fps, do something useful instead of sleeping
-            auto end = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() < 20) { 
+//      { // 20ms sleep to reach 50 fps, do something useful instead of sleeping
+//          auto end = std::chrono::steady_clock::now();
+//          if (std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() < 20) { 
 //              std::this_thread::sleep_for(std::chrono::milliseconds(3));
 //              continue;
-            }
-            start = end;
-        }
-        std::cerr << "start" << std::endl;
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-        float *ptr = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
-        if (ptr) {
-            // wobble vertex in and out along normal
-            int cnt = 0;
-            for (int i=0; i<mesh.nverts(); i++) {
-                            if (vblayer[i]) continue;
+//          }
+//          start = end;
+//      }
 
-                for (int d=0; d<2; d++) {
-                    ptr[cnt*3+d] = opt->X[i*2+d];
-                }
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // wipe the screen buffers
+
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+            float *ptr = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
+            assert(ptr);
+            int cnt = 0;
+            for (int i : range(ninttri)) {
+                int t = tri2draw[i];
+                for (int lv : range(3))
+                    for (int d : range(2))
+                        ptr[cnt*9+lv*3+d] = opt->X[mesh.vert(t, lv)*2+d];
                 cnt++;
             }
-
-            //          updateVertices(ptr, srcVertices, teapotNormals, vertexCount, (float)timer.getElapsedTime());
             glUnmapBuffer(GL_ARRAY_BUFFER);     // release pointer to mapping buffer
         }
 
         opt->go();
 
-        glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
-        float *ptr2 = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
-        if(ptr2) {
+
+
+
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
+            float *ptr = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
+            assert(ptr);
+
 
             int cnt = 0;
-            for (int i=0; i<mesh.nverts(); i++) {
-                            if (vblayer[i]) continue;
-                if (opt->lock[i]) {
-                    ptr2[cnt*3+0] = 1.;
-                    ptr2[cnt*3+1] = 0.;
-                    ptr2[cnt*3+2] = 0.;
-                } else {
-                    ptr2[cnt*3+0] = ptr2[cnt*3+1] = ptr2[cnt*3+2] = 1.;
+            for (int i : range(ninttri)) {
+                int t = tri2draw[i];
+                for (int lv : range(3)) {
+                    float d = opt->det[t]/2-.2;
+                    heat_map_color(d, ptr[cnt*12+lv*4+0], ptr[cnt*12+lv*4+1], ptr[cnt*12+lv*4+2]);
+                    ptr[cnt*12+lv*4+3] = .7;
+                    if (opt->lock[mesh.vert(t, lv)]) {
+                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = ptr[cnt*12+lv*4+3] = 1;
+                    }
                 }
                 cnt++;
             }
+
             glUnmapBuffer(GL_ARRAY_BUFFER);     // release pointer to mapping buffer
+
         }
 
 
 
+        glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+
+        glDrawArrays(GL_TRIANGLES, 0, ninttri*3);
 
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // wipe the screen buffers
 
-        glDrawElements(
-                GL_TRIANGLES,      // mode
-                indices.size(),    // count
-                GL_UNSIGNED_INT,   // type
-                (void*)0           // element array buffer offset
-                );
+
+
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
+            float *ptr = (float*)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
+            assert(ptr);
+
+
+            int cnt = 0;
+            for (int i : range(ninttri)) {
+                int t = tri2draw[i];
+                for (int lv : range(3)) {
+                    if (opt->lock[mesh.vert(t, lv)]) {
+                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = ptr[cnt*12+lv*4+3] = 1;
+                    } else {
+                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = .3;
+                        ptr[cnt*12+lv*4+3] = .3;
+                    }
+                }
+                cnt++;
+            }
+
+            glUnmapBuffer(GL_ARRAY_BUFFER);     // release pointer to mapping buffer
+
+        }
+
+        glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+        glDrawArrays(GL_TRIANGLES, 0, ninttri*3);
 
 
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -479,7 +509,6 @@ if (1) {
     glUseProgram(0);
     glDeleteProgram(prog_hdlr); // note that the shader objects are automatically detached and deleted, since they were flagged for deletion by a previous call to glDeleteShader
     glDisableVertexAttribArray(0);
-    glDeleteBuffers(1, &elementbuffer);
     glDeleteBuffers(1, &colorbuffer);
     glDeleteBuffers(1, &vertexbuffer);
     glDeleteVertexArrays(1, &vao);

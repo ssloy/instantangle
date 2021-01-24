@@ -122,7 +122,7 @@ struct Untangle2D {
                 m.vert(off+lv, 2) = ring[(lv+1+ring.size()/2)%ring.size()];
             }
 */
-            {
+                {
                 int off = m.create_facets(2);
                 if (ring.size()>=5) {
                     m.vert(off, 0) = ring[0];
@@ -135,13 +135,23 @@ struct Untangle2D {
                 }
             }
 
-
-            int off = m.create_facets(ring.size()-2);
-            int v0 = ring[0];
-            for (int lv=1; lv+1<ring.size(); lv++) {
-                m.vert(off+lv-1, 0) = v0;
-                m.vert(off+lv-1, 1) = ring[lv];
-                m.vert(off+lv-1, 2) = ring[lv+1];
+            {
+                int off = m.create_facets(ring.size()-2);
+                int v0 = ring[0];
+                for (int lv=1; lv+1<ring.size(); lv++) {
+                    m.vert(off+lv-1, 0) = v0;
+                    m.vert(off+lv-1, 1) = ring[lv];
+                    m.vert(off+lv-1, 2) = ring[lv+1];
+                }
+            }
+            {
+                int off = m.create_facets(ring.size()-2);
+                int v0 = ring[2];
+                for (int lv=1; lv+1<ring.size(); lv++) {
+                    m.vert(off+lv-1, 0) = v0;
+                    m.vert(off+lv-1, 1) = ring[(lv+2)%ring.size()];
+                    m.vert(off+lv-1, 2) = ring[(lv+1+2)%ring.size()];
+                }
             }
 
         }
