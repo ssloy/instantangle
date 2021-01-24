@@ -1,3 +1,5 @@
+#undef NDEBUG
+#include <cassert>
 #include <iostream>
 #include <cstring>
 #include <fstream>
@@ -15,11 +17,8 @@ using namespace UM;
 
 const GLuint width = 800, height = 800;
 Triangles mesh;
-
-Triangles meshorig;
-Triangles meshbrd;
-int nvorig = -1;
-int nvbrd = -1;
+std::vector<bool> to_kill_coverings;
+std::vector<bool> to_kill_blayer;
 
 Untangle2D *opt = nullptr;
 
@@ -44,19 +43,38 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
     if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-        for (int v : range(nvorig)) {
+        for (int v : vert_iter(mesh)) {
             for (int d=0; d<2; d++) {
-                meshorig.points[v][d] = opt->X[v*2+d];
+                mesh.points[v][d] = opt->X[v*2+d];
             }
         }
-        for (int v : range(nvbrd)) {
-            for (int d=0; d<2; d++) {
-                meshbrd.points[v][d] = opt->X[v*2+d];
-            }
+        {
+            Triangles m = mesh;
+            m.delete_facets(to_kill_coverings);
+            write_geogram("optfull.geogram", m);
         }
-        write_geogram("opt.geogram", meshorig);
-        write_geogram("optbrd.geogram", meshbrd);
-        write_geogram("optfull.geogram", mesh);
+
+            Triangles m = mesh;
+            m.delete_facets(to_kill_blayer);
+            return;
+
+        PointAttribute<double> A(m.points);
+        SurfaceConnectivity fec(m);
+        for (int v : vert_iter(m)) {
+            A[v] = 2*M_PI;
+            int c = fec.v2c[v];
+            if (c<0) continue;
+            A[v] = 0;
+            do {
+                vec3 e1 =  fec.geom(c);
+                vec3 e2 = -fec.geom(fec.prev(c));
+                double a = atan2(vec3{0,0,1} * cross(e1, e2), e1*e2);//atan2(e1.x*e2.y-e1.y*e2.x,e1.x*e2.x+e1.y*e2.y);
+                if (a<0) std::cerr << "ERROR: NEGATIVE ANGLE!" << std::endl;
+                A[v] += a;
+                c = fec.c2c[c];
+            } while (c!=fec.v2c[v]);
+        }
+        write_geogram("optint.geogram", m, {{{"angle", A.ptr}}, {}, {}});
     }
 }
 
@@ -191,8 +209,35 @@ int main(int argc, char** argv) {
     const double boxsize = 2.;
     const double shrink  = 1.3;
     SurfaceAttributes attr = read_by_extension("../potichat-boundary-layer.geogram", mesh);
+
+
+
+    std::vector<int> dectri;
+
+{
+
+    Triangles mdec;
+    read_by_extension("../potichatdec2.obj", mdec);
+    std::vector<vec3> vmerge = *(mesh.points.data);
+    vmerge.insert(vmerge.end(), mdec.points.data->begin(), mdec.points.data->end());
+    std::vector<int> old2new;
+    colocate(vmerge, old2new, 1e-2);
+    int n = mesh.nverts();
+    dectri = std::vector<int>(mdec.nfacets()*3);
+    for (int t : facet_iter(mdec)) {
+        for (int i : range(3)) {
+            dectri[t*3+i] = old2new[n+mdec.vert(t, i)];
+        }
+//      assert(old2new[v+n]<n);
+    }
+
+}
     FacetAttribute<bool> tblayer("boundary_layer", attr, mesh);
     PointAttribute<bool> vblayer(mesh.points);
+
+//    mesh.attr_facets.clear();
+    to_kill_coverings = std::vector<bool>(mesh.nfacets(), false);
+    to_kill_blayer = std::vector<bool>(mesh.nfacets(), false);
 
     int nintvrt = 0;
     int ninttri = 0;
@@ -231,7 +276,6 @@ int main(int argc, char** argv) {
     std::vector<GLuint> indices(3*ninttri, 0);
     std::vector<GLfloat> vertices(3*nintvrt, 0);
     std::vector<GLfloat> colors(3*nintvrt, 1);
-    double angle = 1;
 
     {
         int cnt = 0;
@@ -261,10 +305,11 @@ int main(int argc, char** argv) {
         }
     }
 
-//  opt->no_two_coverings();
 
+    int ntri = mesh.nfacets();
 
-    {
+    /*
+    if (0) {
         for (int v : vert_iter(mesh)) {
             if (!vblayer[v] || fec.is_boundary_vert(v)) continue;
             //              if (rand()%20!=0) continue;
@@ -287,8 +332,36 @@ int main(int argc, char** argv) {
             }
         }
     }
-
+    */
     opt = new Untangle2D(mesh);
+  opt->no_two_coverings();
+
+if (1) {
+    int off = mesh.create_facets(dectri.size()/3);
+    for (int t : range(dectri.size()/3)) {
+        for (int i : range(3)) {
+            mesh.vert(off + t, i) = dectri[t*3+i];
+        }
+    }
+    write_geogram("comp.geogram", mesh);
+}
+
+
+
+
+
+
+    to_kill_coverings.resize(mesh.nfacets());
+    to_kill_blayer.resize(mesh.nfacets());
+
+    assert(mesh.nfacets()==to_kill_coverings.size());
+
+    for (int t : facet_iter(mesh)) {
+        to_kill_coverings[t] = t>=ntri;
+        to_kill_blayer[t] = (t>=ntri || tblayer[t]);
+    }
+
+        opt->rebuild_reference_geometry();
 
     opt->lock[30] = true;
     opt->lock[900] = true;
@@ -385,7 +458,6 @@ int main(int argc, char** argv) {
 
 
 
-        angle += .01;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // wipe the screen buffers
 

@@ -73,6 +73,7 @@ inline double chi_deriv(double eps, double det) {
 
 struct Untangle2D {
     Untangle2D(Triangles &mesh) : m(mesh), X(m.nverts()*2), lock(m.points), ref_tri(m), J(m), K(m), det(m) {
+        calls = 0;
         avglen = get_average_edge_size(m);
 
         for (int v : vert_iter(mesh))
@@ -81,30 +82,29 @@ struct Untangle2D {
 
         rebuild_reference_geometry();
     }
-    
+
     void rebuild_reference_geometry() {
-            for (int t : facet_iter(m)) {
-                vec3 pi = m.points[m.vert(t, 0)];
-                vec3 pj = m.points[m.vert(t, 1)];
-                vec3 pk = m.points[m.vert(t, 2)];
-                double area = facet_area_2d(m, t);
-                if (area<=0) {
-                    std::cerr << "Error: the reference area must be positive" << std::endl;
-//                  return;
-                }
-//              double a = std::sqrt(4*area/std::sqrt(3.));
-//              if (t>=1792)
-//              ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*a / (-2*area) ; // equilateral triangle with unit side length (sqrt(3)/4 area): three non-unit normal vectors
-//              else
-                ref_tri[t] = mat<3,2>{{ {(pk-pj).y, -(pk-pj).x}, {(pi-pk).y, -(pi-pk).x}, {(pj-pi).y, -(pj-pi).x} }}/(-2.*area);
+        for (int t : facet_iter(m)) {
+            vec3 pi = m.points[m.vert(t, 0)];
+            vec3 pj = m.points[m.vert(t, 1)];
+            vec3 pk = m.points[m.vert(t, 2)];
+            double area = facet_area_2d(m, t);
+            if (area<=0) {
+                std::cerr << "Error: the reference area must be positive" << std::endl;
+                //                  return;
             }
+            //              double a = std::sqrt(4*area/std::sqrt(3.));
+            //              if (t>=1792)
+            //              ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*a / (-2*area) ; // equilateral triangle with unit side length (sqrt(3)/4 area): three non-unit normal vectors
+            //              else
+            ref_tri[t] = mat<3,2>{{ {(pk-pj).y, -(pk-pj).x}, {(pi-pk).y, -(pi-pk).x}, {(pj-pi).y, -(pj-pi).x} }}/(-2.*area);
+        }
     }
 
     void no_two_coverings() {
         SurfaceConnectivity fec(m);
         for (int v : vert_iter(m)) {
             if (fec.is_boundary_vert(v)) continue;
-            //              if (rand()%20!=0) continue;
             std::vector<int> ring;
             {
                 int cir = fec.v2c[v];
@@ -114,18 +114,40 @@ struct Untangle2D {
                 } while (cir != fec.v2c[v]);
             }
 
-            int off = m.create_facets(ring.size()-2);
+/*
+            int off = m.create_facets(ring.size());
+            for (int lv=0; lv<ring.size(); lv++) {
+                m.vert(off+lv, 0) = ring[lv];
+                m.vert(off+lv, 1) = ring[(lv+1)%ring.size()];
+                m.vert(off+lv, 2) = ring[(lv+1+ring.size()/2)%ring.size()];
+            }
+*/
+            {
+                int off = m.create_facets(2);
+                if (ring.size()>=5) {
+                    m.vert(off, 0) = ring[0];
+                    m.vert(off, 1) = ring[2];
+                    m.vert(off, 2) = ring[4];
 
+                    m.vert(off+1, 0) = ring[1];
+                    m.vert(off+1, 1) = ring[3];
+                    m.vert(off+1, 2) = ring[5%ring.size()];
+                }
+            }
+
+
+            int off = m.create_facets(ring.size()-2);
             int v0 = ring[0];
             for (int lv=1; lv+1<ring.size(); lv++) {
                 m.vert(off+lv-1, 0) = v0;
                 m.vert(off+lv-1, 1) = ring[lv];
                 m.vert(off+lv-1, 2) = ring[lv+1];
             }
+
         }
         rebuild_reference_geometry();
 
-        //          write_geogram("tri.geogram", m);
+        write_geogram("tri.geogram", m);
     }
 
     void compute_hessian_pattern() {
@@ -214,10 +236,11 @@ struct Untangle2D {
     }
 
     bool go() {
+        calls++;
         compute_hessian_pattern();
         evaluate_jacobian();
 
-        double e0 = 1e-3;
+        double e0 = 1e-8;
         for (int iter=0; iter<maxiter; iter++) {
             if (debug>0) std::cerr << "iteration #" << iter << std::endl;
             double det_prev = detmin;
@@ -284,7 +307,7 @@ if (detmin<0) {
                 if  (detmin>0 && std::abs(E_prev - E)/E<1e-7) break;
         }
 
-        if (0 && detmin<0) {
+        if (detmin<0 && calls%30==0) {
             for (int f : facet_iter(m)) {
                 if (det[f]>0) continue;
                 for (int i : range(3)) {
@@ -445,5 +468,6 @@ if (detmin<0) {
     int ninverted; // number of inverted tetrahedra
 
     std::vector<int> hessian_pattern; // number of non zero entries per row of the hessian matrix
+    int calls;
 };
 
