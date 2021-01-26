@@ -233,7 +233,7 @@ void heat_map_color(float value, float &red, float &green, float &blue) {
 int main(int argc, char** argv) {
     const double boxsize = 2.;
     const double shrink  = 1.3;
-    SurfaceAttributes attr = read_by_extension("../potichat-boundary-layer.geogram", mesh);
+    SurfaceAttributes attr = read_by_extension("../potitepieuvre-boundary-layer.geogram", mesh);
 
 
 
@@ -339,7 +339,7 @@ int main(int argc, char** argv) {
     }
     */
     opt = new Untangle2D(mesh);
-  opt->no_two_coverings();
+opt->no_two_coverings();
 
 if (0) {
     int off = mesh.create_facets(dectri.size()/3);
@@ -366,7 +366,7 @@ if (0) {
         to_kill_blayer[t] = (t>=ntri || tblayer[t]);
     }
 
-        opt->rebuild_reference_geometry();
+// opt->rebuild_reference_geometry();
 
     opt->lock[30] = true;
     opt->lock[900] = true;

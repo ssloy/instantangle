@@ -9,15 +9,18 @@ using namespace UM;
 
 int main(int argc, char** argv) {
     Triangles m;
-    read_by_extension("../potichat.obj", m);
+    read_by_extension("../potitepieuvre.obj", m);
     PointAttribute<int> resp(m.points);
+
     for (int v : vert_iter(m))
         resp[v] = -1;
 
     int nlock = m.nverts();
     int nbdtr = m.nfacets();
 
-    for (int l : range(2)) {
+    CornerAttribute<bool> brd(m);
+
+    for (int l : range(1)) {
         SurfaceConnectivity fec(m);
         int nbord = 0;
         for (int v : vert_iter(m)) {
@@ -35,6 +38,7 @@ int main(int argc, char** argv) {
         for (int c : corner_iter(m)) {
             int opp = fec.opposite(c);
             if (opp>=0) continue;
+            brd[c] = true;
             vec3 e = fec.geom(c);
             vec3 n = {e.y, -e.x, 0};
             n = n*.01;
@@ -49,6 +53,7 @@ int main(int argc, char** argv) {
             m.vert(offf+1, 0) = fec.to(c);
             m.vert(offf+1, 1) = resp[fec.from(c)];
             m.vert(offf+1, 2) = resp[fec.to(c)];
+            if (resp[fec.from(c)]<0 || resp[fec.to(c)]<0) std::cerr << "ERROR\n";
         }
     }
 
@@ -62,10 +67,10 @@ int main(int argc, char** argv) {
         avg_area += facet_area_2d(m, t)/m.nfacets();
 
     for (int t=nbdtr; t<m.nfacets(); t++)
-        opt.ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*std::sqrt(4*avg_area/std::sqrt(3.)) / (-2*avg_area);
+        opt.ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*std::sqrt(4*avg_area/std::sqrt(3.)) / (-2*avg_area)*2;
 
     opt.maxiter = 100;
-    opt.go();
+  opt.go();
 
     for (int v : vert_iter(m))
         for (int d : range(2))
@@ -75,7 +80,8 @@ int main(int argc, char** argv) {
     for (int t : facet_iter(m)) {
         blayer[t] = t>=nbdtr;
     }
-    write_geogram("blopt.geogram", m, { {{"resp", resp.ptr}}, {{"boundary_layer", blayer.ptr}}, {}  });
+
+    write_geogram("blopt.geogram", m, { {{"resp", resp.ptr}}, {{"boundary_layer", blayer.ptr}}, {{"brd", brd.ptr}}  });
 
     return 0;
 }

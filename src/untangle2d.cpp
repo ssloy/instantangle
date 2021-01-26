@@ -84,21 +84,27 @@ struct Untangle2D {
     }
 
     void rebuild_reference_geometry() {
+        std::vector<bool> to_kill(m.nfacets(), false);
         for (int t : facet_iter(m)) {
             vec3 pi = m.points[m.vert(t, 0)];
             vec3 pj = m.points[m.vert(t, 1)];
             vec3 pk = m.points[m.vert(t, 2)];
             double area = facet_area_2d(m, t);
+            to_kill[t] = area<=0;
             if (area<=0) {
                 std::cerr << "Error: the reference area must be positive" << std::endl;
-                //                  return;
-            }
             //              double a = std::sqrt(4*area/std::sqrt(3.));
             //              if (t>=1792)
             //              ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*a / (-2*area) ; // equilateral triangle with unit side length (sqrt(3)/4 area): three non-unit normal vectors
+                //                  return;
+            }
+                          double a = std::sqrt(4*area/std::sqrt(3.));
+            //              if (t>=1792)
+                          ref_tri[t] = mat<3,2>{{ {0,-1}, {std::sqrt(3.)/2.,.5}, {-std::sqrt(3.)/2.,.5} }}*a / (-2*area) ; // equilateral triangle with unit side length (sqrt(3)/4 area): three non-unit normal vectors
             //              else
-            ref_tri[t] = mat<3,2>{{ {(pk-pj).y, -(pk-pj).x}, {(pi-pk).y, -(pi-pk).x}, {(pj-pi).y, -(pj-pi).x} }}/(-2.*area);
+          ref_tri[t] = mat<3,2>{{ {(pk-pj).y, -(pk-pj).x}, {(pi-pk).y, -(pi-pk).x}, {(pj-pi).y, -(pj-pi).x} }}/(-2.*area);
         }
+      m.delete_facets(to_kill);
     }
 
     void no_two_coverings() {
@@ -114,17 +120,18 @@ struct Untangle2D {
                 } while (cir != fec.v2c[v]);
             }
 
-/*
-            int off = m.create_facets(ring.size());
-            for (int lv=0; lv<ring.size(); lv++) {
-                m.vert(off+lv, 0) = ring[lv];
-                m.vert(off+lv, 1) = ring[(lv+1)%ring.size()];
-                m.vert(off+lv, 2) = ring[(lv+1+ring.size()/2)%ring.size()];
+            if (1) {
+                int off = m.create_facets(ring.size());
+                for (int lv=0; lv<ring.size(); lv++) {
+                    m.vert(off+lv, 0) = ring[lv];
+                    m.vert(off+lv, 1) = ring[(lv+1)%ring.size()];
+                    m.vert(off+lv, 2) = ring[(lv+1+ring.size()/2)%ring.size()];
+                }
             }
-*/
-                {
-                int off = m.create_facets(2);
+
+           if (1) {
                 if (ring.size()>=5) {
+                    int off = m.create_facets(2);
                     m.vert(off, 0) = ring[0];
                     m.vert(off, 1) = ring[2];
                     m.vert(off, 2) = ring[4];
@@ -135,16 +142,18 @@ struct Untangle2D {
                 }
             }
 
-            {
-                int off = m.create_facets(ring.size()-2);
-                int v0 = ring[0];
-                for (int lv=1; lv+1<ring.size(); lv++) {
-                    m.vert(off+lv-1, 0) = v0;
-                    m.vert(off+lv-1, 1) = ring[lv];
-                    m.vert(off+lv-1, 2) = ring[lv+1];
+            if (0) {
+                if (ring.size()>=5) {
+                    int off = m.create_facets(ring.size()-2);
+                    int v0 = ring[0];
+                    for (int lv=1; lv+1<ring.size(); lv++) {
+                        m.vert(off+lv-1, 0) = v0;
+                        m.vert(off+lv-1, 1) = ring[lv];
+                        m.vert(off+lv-1, 2) = ring[lv+1];
+                    }
                 }
             }
-            {
+            if (0) {
                 int off = m.create_facets(ring.size()-2);
                 int v0 = ring[2];
                 for (int lv=1; lv+1<ring.size(); lv++) {
@@ -262,7 +271,7 @@ struct Untangle2D {
             if (debug>0) std::cerr << "detmin: " << detmin << " ninv: " << ninverted << std::endl;
             double E_prev = evaluate_energy();
 
-if (detmin<0) {
+if (1||detmin<0) {
 //#if 1
             const hlbfgs_optimizer::simplified_func_grad_eval func = [&](const std::vector<double>& X, double& F, std::vector<double>& G) {
                 std::fill(G.begin(), G.end(), 0);
@@ -455,7 +464,7 @@ if (detmin<0) {
     // optimization input parameters
     Triangles &m;           // the mesh to optimize
     double theta = 1./4.;   // the energy is (1-theta)*(shape energy) + theta*(area energy)
-    int maxiter = 3;    // max number of outer iterations
+    int maxiter = 2;    // max number of outer iterations
     double bfgs_threshold = 1e-1;
     int bfgs_maxiter = 50; // max number of inner iterations
     int nlmaxiter = 15000;
