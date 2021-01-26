@@ -464,7 +464,7 @@ if (1||detmin<0) {
     // optimization input parameters
     Triangles &m;           // the mesh to optimize
     double theta = 1./4.;   // the energy is (1-theta)*(shape energy) + theta*(area energy)
-    int maxiter = 2;    // max number of outer iterations
+    int maxiter = 1;    // max number of outer iterations
     double bfgs_threshold = 1e-1;
     int bfgs_maxiter = 50; // max number of inner iterations
     int nlmaxiter = 15000;

@@ -9,6 +9,8 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
 
 #include <ultimaille/all.h>
 
@@ -23,6 +25,26 @@ std::vector<bool> to_kill_blayer;
 Untangle2D *opt = nullptr;
 
 int vertgrab = -1;
+
+GLuint load_texture(const std::string &imagepath) {
+    std::cerr << "load_texture(\"" << imagepath << "\");" << std::endl;
+
+    stbi_set_flip_vertically_on_load(1);
+    int width, height, bpp;
+    unsigned char* rgb = stbi_load(imagepath.c_str(), &width, &height, &bpp, 3);
+
+    // Create one OpenGL texture
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL,  0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    stbi_image_free(rgb);
+    return textureID;
+}
 
 void get_bbox(const PointSet &pts, vec3 &min, vec3 &max) {
     min = max = pts[0];
@@ -236,6 +258,7 @@ int main(int argc, char** argv) {
     SurfaceAttributes attr = read_by_extension("../potitepieuvre-boundary-layer.geogram", mesh);
 
 
+    std::vector<vec3> tex_coords = *mesh.points.data;
 
     std::vector<int> dectri;
 
@@ -298,8 +321,14 @@ int main(int argc, char** argv) {
     }
 
     GLuint prog_hdlr = set_shaders("../src/vertex.glsl", "../src/fragment.glsl");
+    GLuint Texture0ID  = glGetUniformLocation(prog_hdlr, "diffuse");
+
+    GLuint tex_diffuse = load_texture("../potitepieuvre.png");
+
     std::vector<GLfloat> vertices(3*3*ninttri, 0); // TODO get rid of these, it is ridiculous to have arrays that are not used
     std::vector<GLfloat>   colors(4*3*ninttri, 1);
+    std::vector<GLfloat>      uvs(2*3*ninttri, 0);
+
 
     std::vector<int> tri2draw(ninttri, 0);
     {
@@ -309,6 +338,17 @@ int main(int argc, char** argv) {
             tri2draw[cnt++] = t;
         }
     }
+{
+    int cnt = 0;
+    for (int i : range(ninttri)) {
+        int t = tri2draw[i];
+        for (int lv : range(3))
+            for (int d : range(2))
+                uvs[2*3*cnt+lv*2+d] = tex_coords[mesh.vert(t, lv)][d];
+        cnt++;
+    }
+}
+
 
 
     int ntri = mesh.nfacets();
@@ -339,7 +379,7 @@ int main(int argc, char** argv) {
     }
     */
     opt = new Untangle2D(mesh);
-opt->no_two_coverings();
+//opt->no_two_coverings();
 
 if (0) {
     int off = mesh.create_facets(dectri.size()/3);
@@ -391,13 +431,28 @@ if (0) {
     glBufferData(GL_ARRAY_BUFFER, colors.size()*sizeof(GLfloat), colors.data(), GL_STREAM_DRAW);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
+    glEnableVertexAttribArray(2);
+    GLuint uvbuffer = 0;
+    glGenBuffers(1, &uvbuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
+    glBufferData(GL_ARRAY_BUFFER, uvs.size()*sizeof(GLfloat), uvs.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+
+
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex_diffuse);
+
 
     glViewport(0, 0, width, height);
-    glClearColor(0.1f, 0.2f, 0.2f, 1.0f);
+    glClearColor(0x3e/255., 0xbd/255.f, 0xc8/255., 1.0f);
     glDisable(GL_DEPTH_TEST);
     glClearDepth(0);
     glDepthFunc(GL_GREATER); // accept fragment if it is closer to the camera than the former one
     glUseProgram(prog_hdlr); // specify the shaders to use
+
+
 
 
 
@@ -416,6 +471,8 @@ if (0) {
 //      }
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // wipe the screen buffers
+
+        glUniform1i(Texture0ID, 0);
 
         {
             glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
@@ -448,10 +505,13 @@ if (0) {
                 int t = tri2draw[i];
                 for (int lv : range(3)) {
                     float d = opt->det[t]/2-.2;
-                    heat_map_color(d, ptr[cnt*12+lv*4+0], ptr[cnt*12+lv*4+1], ptr[cnt*12+lv*4+2]);
-                    ptr[cnt*12+lv*4+3] = .7;
+                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = ptr[cnt*12+lv*4+3] = 0;
+//                  heat_map_color(d, ptr[cnt*12+lv*4+0], ptr[cnt*12+lv*4+1], ptr[cnt*12+lv*4+2]);
+//                  ptr[cnt*12+lv*4+3] = .7;
                     if (opt->lock[mesh.vert(t, lv)]) {
-                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = ptr[cnt*12+lv*4+3] = 1;
+//                        ptr[cnt*12+lv*4+0] = ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = ptr[cnt*12+lv*4+3] = 1;
+                        ptr[cnt*12+lv*4+0] =  ptr[cnt*12+lv*4+3] = 1;
+                         ptr[cnt*12+lv*4+1] = ptr[cnt*12+lv*4+2] = 0;
                     }
                 }
                 cnt++;
@@ -469,6 +529,7 @@ if (0) {
 
 
 
+/*
 
 
         {
@@ -497,6 +558,7 @@ if (0) {
 
         glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
         glDrawArrays(GL_TRIANGLES, 0, ninttri*3);
+        */
 
 
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -511,6 +573,9 @@ if (0) {
     glDisableVertexAttribArray(0);
     glDeleteBuffers(1, &colorbuffer);
     glDeleteBuffers(1, &vertexbuffer);
+    glDeleteBuffers(1, &uvbuffer);
+
+    glDeleteTextures(1, &tex_diffuse);
     glDeleteVertexArrays(1, &vao);
     delete opt;
 
